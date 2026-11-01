@@ -1,5 +1,5 @@
 'use client';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
@@ -22,6 +22,7 @@ export default function ProviderRegisterPage() {
     district: 'Kilinochchi',
     city: '',
     category_id: '',
+    categoryId: '',
     title: '',
     experience_years: '',
     bio: '',
@@ -41,6 +42,7 @@ export default function ProviderRegisterPage() {
   const [regFeePaid, setRegFeePaid] = useState(false);
   const [categories, setCategories] = useState([]);
   const [categoriesLoading, setCategoriesLoading] = useState(true);
+  const [categoriesError, setCategoriesError] = useState('');
 
   // Redirect if already logged in as provider
   useEffect(() => {
@@ -51,23 +53,30 @@ export default function ProviderRegisterPage() {
     }
   }, [user, authLoading, router, confirmationId]);
 
-  // Fetch categories
-  useEffect(() => {
-    async function loadCategories() {
-      try {
-        const res = await fetch('/api/categories');
-        if (res.ok) {
-          const data = await res.json();
-          setCategories(data.categories || data || []);
-        }
-      } catch (err) {
-        console.error('Failed to load categories:', err);
-      } finally {
-        setCategoriesLoading(false);
+  // Fetch active categories from the same source used by service listings
+  const loadCategories = useCallback(async () => {
+    setCategoriesLoading(true);
+    setCategoriesError('');
+    try {
+      const res = await fetch('/api/categories');
+      if (!res.ok) {
+        throw new Error(`Failed to load service categories (HTTP ${res.status})`);
       }
+      const data = await res.json();
+      const rawList = Array.isArray(data) ? data : (data?.categories || []);
+      const activeList = rawList.filter(c => c && (c.is_active === undefined || c.is_active === 1 || c.is_active === true));
+      setCategories(activeList);
+    } catch (err) {
+      console.error('Failed to load categories:', err);
+      setCategoriesError(err.message || 'Unable to load service categories. Please try again.');
+    } finally {
+      setCategoriesLoading(false);
     }
-    loadCategories();
   }, []);
+
+  useEffect(() => {
+    loadCategories();
+  }, [loadCategories]);
 
   // Fetch fee settings for pre-registration display
   useEffect(() => {
@@ -87,18 +96,39 @@ export default function ProviderRegisterPage() {
   }, []);
 
   const handleChange = (e) => {
-    setFormData((prev) => ({ ...prev, [e.target.name]: e.target.value }));
+    const { name, value } = e.target;
+    setFormData((prev) => {
+      const next = { ...prev, [name]: value };
+      if (name === 'category_id') {
+        next.categoryId = value;
+      } else if (name === 'categoryId') {
+        next.category_id = value;
+      }
+      return next;
+    });
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
     setSuccess('');
+
+    const chosenCategoryId = (formData.category_id || formData.categoryId || '').trim();
+    if (!chosenCategoryId) {
+      setError('Please select a valid service category before submitting.');
+      return;
+    }
+
     setLoading(true);
 
     try {
       const res = await register({
         ...formData,
+        category_id: chosenCategoryId,
+        categoryId: chosenCategoryId,
+        experienceYears: formData.experience_years,
+        baseRate: formData.base_rate,
+        pricingType: formData.pricing_type,
         role: 'provider',
         verificationDocs: formData.nic_number ? [
           { type: 'National Identity Card (NIC)', number: formData.nic_number, date: new Date().toISOString() }
@@ -125,6 +155,7 @@ export default function ProviderRegisterPage() {
     );
   }
 
+  const selectedCategory = categories.find((c) => String(c.id) === String(formData.category_id || formData.categoryId));
   const inputStyle = { width: '100%' };
 
   return (
@@ -147,7 +178,7 @@ export default function ProviderRegisterPage() {
           </p>
         </div>
 
-        <div className="card" style={{ padding: '2rem', borderRadius: 'var(--radius-lg)' }}>
+        <div className="card" style={{ padding: '2rem', borderRadius: 'var(--radius-lg)', overflow: 'visible' }}>
           {confirmationId ? (
             <div style={{ textAlign: 'center', padding: '1.5rem 0' }}>
               <div style={{ width: '64px', height: '64px', borderRadius: '50%', background: '#ECFDF5', color: '#059669', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.25rem' }}>
@@ -311,18 +342,149 @@ export default function ProviderRegisterPage() {
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
                   {/* Category */}
                   <div className="form-group" style={{ margin: 0 }}>
-                    <label className="form-label" htmlFor="category_id">
-                      <Briefcase size={13} style={{ marginRight: '0.3rem', verticalAlign: 'middle' }} />
-                      Service Category
-                    </label>
-                    <select id="category_id" name="category_id" className="form-control" value={formData.category_id} onChange={handleChange} style={inputStyle} required>
-                      <option value="">
-                        {categoriesLoading ? 'Loading…' : '— Select a category —'}
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.4rem' }}>
+                      <label className="form-label" htmlFor="category_id" style={{ margin: 0 }}>
+                        <Briefcase size={13} style={{ marginRight: '0.3rem', verticalAlign: 'middle' }} />
+                        Service Category <span style={{ color: '#EF4444' }}>*</span>
+                      </label>
+                      {categoriesLoading && (
+                        <span style={{ fontSize: '0.75rem', color: '#64748B', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                          <span className="spinner" style={{ width: '12px', height: '12px', borderWidth: '2px' }} />
+                          Loading…
+                        </span>
+                      )}
+                    </div>
+
+                    <select
+                      id="category_id"
+                      name="category_id"
+                      className="form-control"
+                      value={formData.category_id || formData.categoryId || ''}
+                      onChange={handleChange}
+                      disabled={categoriesLoading || Boolean(categoriesError) || categories.length === 0}
+                      required
+                      aria-label="Service Category"
+                      style={{
+                        ...inputStyle,
+                        cursor: (categoriesLoading || categoriesError || categories.length === 0) ? 'not-allowed' : 'pointer',
+                        colorScheme: 'light',
+                        backgroundColor: '#ffffff',
+                        color: (formData.category_id || formData.categoryId) ? '#0f172a' : '#64748b'
+                      }}
+                    >
+                      <option value="" disabled>
+                        {categoriesLoading
+                          ? 'Loading categories…'
+                          : categoriesError
+                          ? 'Unable to load categories'
+                          : categories.length === 0
+                          ? 'No service categories available'
+                          : '— Select a category —'}
                       </option>
                       {categories.map((c) => (
-                        <option key={c.id} value={c.id}>{c.name}</option>
+                        <option
+                          key={String(c.id)}
+                          value={String(c.id)}
+                          style={{ color: '#0f172a', backgroundColor: '#ffffff' }}
+                        >
+                          {c.name}
+                        </option>
                       ))}
                     </select>
+
+                    {/* Immediate display of selected category name */}
+                    {selectedCategory && (
+                      <div
+                        id="selected-category-indicator"
+                        style={{
+                          marginTop: '0.4rem',
+                          padding: '0.4rem 0.65rem',
+                          background: '#ECFDF5',
+                          border: '1px solid #A7F3D0',
+                          borderRadius: '6px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: '0.5rem',
+                          fontSize: '0.8rem',
+                          color: '#065F46'
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                          <CheckCircle2 size={14} color="#059669" style={{ flexShrink: 0 }} />
+                          <span>Selected: <strong>{selectedCategory.name}</strong></span>
+                        </div>
+                        {selectedCategory.description && (
+                          <span style={{ fontSize: '0.72rem', color: '#047857', opacity: 0.9 }}>
+                            {selectedCategory.description.length > 40
+                              ? `${selectedCategory.description.substring(0, 40)}…`
+                              : selectedCategory.description}
+                          </span>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Error State with Retry Button */}
+                    {categoriesError && (
+                      <div
+                        style={{
+                          marginTop: '0.5rem',
+                          padding: '0.6rem 0.75rem',
+                          background: '#FEF2F2',
+                          border: '1px solid #FCA5A5',
+                          borderRadius: '6px',
+                          fontSize: '0.8rem',
+                          color: '#991B1B',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: '0.5rem',
+                          flexWrap: 'wrap'
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                          <AlertCircle size={15} style={{ flexShrink: 0 }} />
+                          <span>{categoriesError}</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => loadCategories()}
+                          className="btn btn-sm"
+                          style={{
+                            padding: '0.2rem 0.65rem',
+                            fontSize: '0.75rem',
+                            background: '#DC2626',
+                            color: '#FFFFFF',
+                            border: 'none',
+                            borderRadius: '4px',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          Retry
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Empty State: No categories configured */}
+                    {!categoriesLoading && !categoriesError && categories.length === 0 && (
+                      <div
+                        style={{
+                          marginTop: '0.5rem',
+                          padding: '0.6rem 0.75rem',
+                          background: '#FFFBEB',
+                          border: '1px solid #FCD34D',
+                          borderRadius: '6px',
+                          fontSize: '0.8rem',
+                          color: '#92400E',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.35rem'
+                        }}
+                      >
+                        <AlertCircle size={15} style={{ flexShrink: 0 }} />
+                        <span>No service categories are currently configured. Please contact administrator support.</span>
+                      </div>
+                    )}
                   </div>
 
                   {/* Professional Title */}
