@@ -8,15 +8,16 @@ import ReviewModal from '@/components/ReviewModal';
 import MessageModal from '@/components/MessageModal';
 import ReceiptModal from '@/components/ReceiptModal';
 import CheckoutModal from '@/components/CheckoutModal';
+import UserAvatarCircle from '@/components/UserAvatarCircle';
 import { 
   Calendar, Clock, CheckCircle2, AlertCircle, MessageSquare, 
   Star, XCircle, ArrowRight, User, ShieldCheck, MapPin, 
-  DollarSign, RefreshCw, AlertTriangle, Receipt, CreditCard
+  DollarSign, RefreshCw, AlertTriangle, Receipt, CreditCard, Trash2
 } from 'lucide-react';
 
 export default function CustomerDashboardPage() {
   const router = useRouter();
-  const { user, token, loading: authLoading } = useAuth();
+  const { user, token, loading: authLoading, updateUser, fetchCurrentUser } = useAuth();
 
   const [activeTab, setActiveTab] = useState('bookings'); // 'bookings' | 'profile' | 'payments'
   const [statusFilter, setStatusFilter] = useState('all');
@@ -44,6 +45,35 @@ export default function CustomerDashboardPage() {
   const [profileCity, setProfileCity] = useState('');
   const [profileAddress, setProfileAddress] = useState('');
   const [profileSaved, setProfileSaved] = useState(false);
+  const [avatarActionLoading, setAvatarActionLoading] = useState(false);
+  const [avatarError, setAvatarError] = useState('');
+  const [avatarSuccess, setAvatarSuccess] = useState('');
+
+  const handleRemoveAvatar = async () => {
+    if (!confirm('Are you sure you want to remove your profile picture?')) return;
+    setAvatarActionLoading(true);
+    setAvatarError('');
+    setAvatarSuccess('');
+    try {
+      const res = await fetch('/api/auth/profile', {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setAvatarError(data.error || 'Failed to remove profile picture.');
+      } else {
+        setAvatarSuccess('Profile picture removed successfully.');
+        if (updateUser) updateUser({ avatar: null });
+        if (fetchCurrentUser) await fetchCurrentUser();
+        setTimeout(() => setAvatarSuccess(''), 3500);
+      }
+    } catch (err) {
+      setAvatarError('An unexpected network error occurred.');
+    } finally {
+      setAvatarActionLoading(false);
+    }
+  };
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -250,11 +280,7 @@ export default function CustomerDashboardPage() {
       <aside className="dashboard-sidebar">
         <div style={{ padding: '0 0.5rem 1.5rem 0.5rem', borderBottom: '1px solid #E2E8F0', marginBottom: '1.25rem' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-            <img 
-              src={user.avatar || 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=100'} 
-              alt={user.name} 
-              style={{ width: '44px', height: '44px', borderRadius: '50%', objectFit: 'cover' }}
-            />
+            <UserAvatarCircle user={user} size={44} />
             <div>
               <div style={{ fontWeight: 800, color: '#0F172A', fontSize: '0.95rem' }}>{user.name}</div>
               <div style={{ fontSize: '0.75rem', color: '#64748B' }}>Customer Account</div>
@@ -605,6 +631,48 @@ export default function CustomerDashboardPage() {
                   Profile updated successfully!
                 </div>
               )}
+
+              {/* Profile Photo Display and Removal */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '1.25rem',
+                paddingBottom: '1.25rem',
+                marginBottom: '1.25rem',
+                borderBottom: '1px solid #E2E8F0'
+              }}>
+                <UserAvatarCircle user={user} size={60} />
+                <div>
+                  <div style={{ fontWeight: 700, color: '#0F172A', fontSize: '0.95rem', marginBottom: '0.2rem' }}>
+                    Profile Picture
+                  </div>
+                  <div style={{ fontSize: '0.8rem', color: '#64748B', marginBottom: user?.avatar ? '0.5rem' : 0 }}>
+                    {user?.avatar ? 'Custom photo displayed across bookings and chats.' : 'Default initials avatar active.'}
+                  </div>
+                  {user?.avatar && (
+                    <button
+                      type="button"
+                      onClick={handleRemoveAvatar}
+                      disabled={avatarActionLoading}
+                      className="btn btn-secondary btn-sm"
+                      style={{ color: '#DC2626', borderColor: '#FECACA', fontSize: '0.8rem', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}
+                    >
+                      <Trash2 size={14} />
+                      <span>{avatarActionLoading ? 'Removing…' : 'Remove Profile Picture'}</span>
+                    </button>
+                  )}
+                  {avatarSuccess && (
+                    <div style={{ color: '#059669', fontSize: '0.8rem', marginTop: '0.35rem', fontWeight: 600 }}>
+                      {avatarSuccess}
+                    </div>
+                  )}
+                  {avatarError && (
+                    <div style={{ color: '#DC2626', fontSize: '0.8rem', marginTop: '0.35rem', fontWeight: 600 }}>
+                      {avatarError}
+                    </div>
+                  )}
+                </div>
+              </div>
 
               <form onSubmit={handleUpdateProfile}>
                 <div className="form-group">

@@ -9,15 +9,16 @@ import QuoteResponseModal from '@/components/QuoteResponseModal';
 import MessageModal from '@/components/MessageModal';
 import CheckoutModal from '@/components/CheckoutModal';
 import ReceiptModal from '@/components/ReceiptModal';
+import UserAvatarCircle from '@/components/UserAvatarCircle';
 import { 
   Calendar, DollarSign, Clock, CheckCircle2, AlertCircle, 
   MessageSquare, Star, ShieldCheck, Wrench, User, RefreshCw, 
-  MapPin, Award, Check, X, FileText, TrendingUp, CreditCard, Receipt
+  MapPin, Award, Check, X, FileText, TrendingUp, CreditCard, Receipt, Trash2
 } from 'lucide-react';
 
 export default function ProviderDashboardPage() {
   const router = useRouter();
-  const { user, providerProfile, token, loading: authLoading, fetchCurrentUser } = useAuth();
+  const { user, providerProfile, token, loading: authLoading, fetchCurrentUser, updateUser } = useAuth();
 
   const [activeTab, setActiveTab] = useState('bookings'); // 'bookings' | 'earnings' | 'services' | 'verification' | 'reviews' | 'billing'
   const [bookings, setBookings] = useState([]);
@@ -48,6 +49,35 @@ export default function ProviderDashboardPage() {
   const [editPricingDesc, setEditPricingDesc] = useState('');
   const [editTowns, setEditTowns] = useState('');
   const [profileSaved, setProfileSaved] = useState(false);
+  const [avatarActionLoading, setAvatarActionLoading] = useState(false);
+  const [avatarError, setAvatarError] = useState('');
+  const [avatarSuccess, setAvatarSuccess] = useState('');
+
+  const handleRemoveAvatar = async () => {
+    if (!confirm('Are you sure you want to remove your profile picture?')) return;
+    setAvatarActionLoading(true);
+    setAvatarError('');
+    setAvatarSuccess('');
+    try {
+      const res = await fetch('/api/auth/profile', {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setAvatarError(data.error || 'Failed to remove profile picture.');
+      } else {
+        setAvatarSuccess('Profile picture removed successfully.');
+        if (updateUser) updateUser({ avatar: null });
+        if (fetchCurrentUser) await fetchCurrentUser();
+        setTimeout(() => setAvatarSuccess(''), 3500);
+      }
+    } catch (err) {
+      setAvatarError('An unexpected network error occurred.');
+    } finally {
+      setAvatarActionLoading(false);
+    }
+  };
 
   // Verification submission state
   const [newNic, setNewNic] = useState('');
@@ -316,11 +346,7 @@ export default function ProviderDashboardPage() {
       <aside className="dashboard-sidebar">
         <div style={{ padding: '0 0.5rem 1.5rem 0.5rem', borderBottom: '1px solid #E2E8F0', marginBottom: '1.25rem' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.75rem' }}>
-            <img 
-              src={user.avatar || 'https://images.unsplash.com/photo-1544717305-2782549b5136?w=100'} 
-              alt={user.name} 
-              style={{ width: '48px', height: '48px', borderRadius: '50%', objectFit: 'cover' }}
-            />
+            <UserAvatarCircle user={user} size={48} />
             <div>
               <div style={{ fontWeight: 800, color: '#0F172A', fontSize: '1rem' }}>{user.name}</div>
               <div style={{ fontSize: '0.75rem', color: '#64748B' }}>
@@ -923,6 +949,48 @@ export default function ProviderDashboardPage() {
                   Professional profile updated successfully!
                 </div>
               )}
+
+              {/* Profile Photo Display and Removal */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '1.25rem',
+                paddingBottom: '1.25rem',
+                marginBottom: '1.25rem',
+                borderBottom: '1px solid #E2E8F0'
+              }}>
+                <UserAvatarCircle user={user} size={60} />
+                <div>
+                  <div style={{ fontWeight: 700, color: '#0F172A', fontSize: '0.95rem', marginBottom: '0.2rem' }}>
+                    Profile Photo
+                  </div>
+                  <div style={{ fontSize: '0.8rem', color: '#64748B', marginBottom: user?.avatar ? '0.5rem' : 0 }}>
+                    {user?.avatar ? 'Custom photo displayed in search results and customer bookings.' : 'Default initials badge displayed.'}
+                  </div>
+                  {user?.avatar && (
+                    <button
+                      type="button"
+                      onClick={handleRemoveAvatar}
+                      disabled={avatarActionLoading}
+                      className="btn btn-secondary btn-sm"
+                      style={{ color: '#DC2626', borderColor: '#FECACA', fontSize: '0.8rem', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}
+                    >
+                      <Trash2 size={14} />
+                      <span>{avatarActionLoading ? 'Removing…' : 'Remove Profile Picture'}</span>
+                    </button>
+                  )}
+                  {avatarSuccess && (
+                    <div style={{ color: '#059669', fontSize: '0.8rem', marginTop: '0.35rem', fontWeight: 600 }}>
+                      {avatarSuccess}
+                    </div>
+                  )}
+                  {avatarError && (
+                    <div style={{ color: '#DC2626', fontSize: '0.8rem', marginTop: '0.35rem', fontWeight: 600 }}>
+                      {avatarError}
+                    </div>
+                  )}
+                </div>
+              </div>
 
               <form onSubmit={handleSaveProfile}>
                 <div className="form-group">
